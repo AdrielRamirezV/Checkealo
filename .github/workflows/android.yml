@@ -21,23 +21,16 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Descargamos los scripts y el archivo binario del Gradle Wrapper oficial
-    # para tener un entorno Gradle 100% estándar e independiente de la máquina virtual.
-    - name: Descargar Gradle Wrapper
-      run: |
-        mkdir -p gradle/wrapper
-        curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.4/gradle/wrapper/gradle-wrapper.jar
-        curl -L -o gradlew https://raw.githubusercontent.com/gradle/gradle/v8.4/gradlew
-        curl -L -o gradlew.bat https://raw.githubusercontent.com/gradle/gradle/v8.4/gradlew.bat
-        chmod +x gradlew
-
-    # Configuramos el entorno de Gradle dejando que el Wrapper maneje las versiones
+    # Configuramos Gradle para usar la versión 8.4 de forma global en la máquina virtual.
+    # Esto evita descargar el wrapper manualmente y previene problemas de formato de archivos (Exit Code 127).
     - name: Configurar Gradle
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.4'
 
-    # Compilamos usando el Wrapper estándar local
-    - name: Compilar APK con Gradle Wrapper
-      run: ./gradlew assembleDebug
+    # Compilamos directamente usando el comando global "gradle" a la versión 8.4
+    - name: Compilar APK con Gradle 8.4
+      run: gradle assembleDebug
 
     - name: Subir Archivo APK como Artefacto
       uses: actions/upload-artifact@v4
