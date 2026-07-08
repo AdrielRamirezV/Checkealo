@@ -21,13 +21,15 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Configuramos el entorno de Gradle (esto optimiza la caché y la velocidad de compilación)
+    # Configuramos el entorno de Gradle forzando una versión compatible (Gradle 8.4)
+    # con nuestro Android Gradle Plugin (8.2.2) para evitar errores de compatibilidad.
     - name: Configurar Gradle
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.4'
 
-    # Ejecutamos la compilación directamente usando el comando "gradle" global pre-instalado
-    # en la máquina virtual de GitHub, evitando conflictos de red con el Wrapper.
-    - name: Compilar APK con Gradle Global
+    # Ejecutamos la compilación usando la versión de Gradle 8.4 establecida anteriormente
+    - name: Compilar APK con Gradle 8.4
       run: gradle assembleDebug
 
     - name: Subir Archivo APK como Artefacto
