@@ -70,6 +70,7 @@ class MqttClientHelper(private val context: Context) {
         password: String
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val brokerUrl = "tcp://$host:$port"
+        val pass = password
         try {
             val persistence = MemoryPersistence()
             val client = MqttClient(brokerUrl, clientId, persistence)
@@ -79,8 +80,8 @@ class MqttClientHelper(private val context: Context) {
                 if (username.isNotEmpty()) {
                     userName = username
                 }
-                if (password.isNotEmpty()) {
-                    password = this@testConnection.password.toCharArray()
+                if (pass.isNotEmpty()) {
+                    this.password = pass.toCharArray()
                 }
             }
             client.connect(options)
