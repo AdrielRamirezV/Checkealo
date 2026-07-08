@@ -21,16 +21,23 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Configuramos el entorno de Gradle forzando una versión compatible (Gradle 8.4)
-    # con nuestro Android Gradle Plugin (8.2.2) para evitar errores de compatibilidad.
+    # Descargamos los scripts y el archivo binario del Gradle Wrapper oficial
+    # para tener un entorno Gradle 100% estándar e independiente de la máquina virtual.
+    - name: Descargar Gradle Wrapper
+      run: |
+        mkdir -p gradle/wrapper
+        curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.4/gradle/wrapper/gradle-wrapper.jar
+        curl -L -o gradlew https://raw.githubusercontent.com/gradle/gradle/v8.4/gradlew
+        curl -L -o gradlew.bat https://raw.githubusercontent.com/gradle/gradle/v8.4/gradlew.bat
+        chmod +x gradlew
+
+    # Configuramos el entorno de Gradle dejando que el Wrapper maneje las versiones
     - name: Configurar Gradle
       uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: '8.4'
 
-    # Ejecutamos la compilación usando la versión de Gradle 8.4 establecida anteriormente
-    - name: Compilar APK con Gradle 8.4
-      run: gradle assembleDebug
+    # Compilamos usando el Wrapper estándar local
+    - name: Compilar APK con Gradle Wrapper
+      run: ./gradlew assembleDebug
 
     - name: Subir Archivo APK como Artefacto
       uses: actions/upload-artifact@v4
