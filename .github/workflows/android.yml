@@ -20,21 +20,15 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
+    # Configuramos el entorno de Gradle (esto optimiza la caché y la velocidad de compilación)
     - name: Configurar Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    # Si no tienes los archivos locales de Gradle Wrapper (gradlew) en el repositorio,
-    # el servidor de GitHub los creará automáticamente aquí.
-    - name: Generar Gradle Wrapper
-      run: gradle wrapper --gradle-version 8.2.2
-
-    - name: Dar permisos de ejecución a Gradlew
-      run: chmod +x gradlew
-
-    - name: Compilar APK de Depuración (Debug)
-      run: ./gradlew assembleDebug
+    # Ejecutamos la compilación directamente usando el comando "gradle" global pre-instalado
+    # en la máquina virtual de GitHub, evitando conflictos de red con el Wrapper.
+    - name: Compilar APK con Gradle Global
+      run: gradle assembleDebug
 
     - name: Subir Archivo APK como Artefacto
       uses: actions/upload-artifact@v4
