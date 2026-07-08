@@ -1,6 +1,8 @@
 <resources>
-    <!-- Base application theme using Material 3 DayNight -->
-    <style name="Theme.Checkealo" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Custom theme colors and values can be declared here if needed -->
+    <!-- Base application theme. We use the system's built-in Material NoActionBar theme.
+         Since Jetpack Compose renders the UI entirely in Kotlin, the XML theme is only 
+         used for the basic window backdrop and requires no external dependency linking. -->
+    <style name="Theme.Checkealo" parent="android:Theme.Material.NoActionBar">
+        <!-- Optional system UI adjustments can be made here -->
     </style>
 </resources>
