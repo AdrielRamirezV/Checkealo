@@ -1,0 +1,178 @@
+package com.checkealo.app.service
+
+import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
+import android.util.Log
+import com.checkealo.app.data.NotificationDatabase
+import com.checkealo.app.data.NotificationLog
+import com.checkealo.app.network.MqttClientHelper
+import com.checkealo.app.network.WhatsAppClientHelper
+import com.google.gson.Gson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+class NotificationService : NotificationListenerService() {
+    private val TAG = "NotificationService"
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val gson = Gson()
+
+    data class ParsedNotification(
+        val appName: String,
+        val sender: String,
+        val amount: Double
+    )
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        Log.d(TAG, "Notification Listener connected!")
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        super.onNotificationPosted(sbn)
+        if (sbn == null) return
+
+        val packageName = sbn.packageName
+        val extras = sbn.notification.extras
+        val title = extras.getString("android.title")
+        val text = extras.getCharSequence("android.text")?.toString()
+
+        Log.d(TAG, "Notification received from package: $packageName | Title: $title | Text: $text")
+
+        // Parse notification
+        val parsed = parseNotification(packageName, title, text) ?: return
+        Log.d(TAG, "Parsed notification successfully: App=${parsed.appName}, Sender=${parsed.sender}, Amount=${parsed.amount}")
+
+        // Process in background coroutine
+        serviceScope.launch {
+            processTransaction(packageName, parsed, text ?: "")
+        }
+    }
+
+    private fun parseNotification(packageName: String, title: String?, text: String?): ParsedNotification? {
+        if (text == null) return null
+
+        // 1. Yape standard notifications
+        // Example: "Juan Perez te yapeó S/ 15.00" or "¡Yape! Juan Perez te yapeó S/ 15.00"
+        val yapeRegex = Regex("""(?:¡Yape!\s+)?(.+?)\s+te yapeó\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
+        val yapeMatch = yapeRegex.find(text)
+        if (yapeMatch != null) {
+            val sender = yapeMatch.groupValues[1].trim()
+            val amountStr = yapeMatch.groupValues[2].replace(",", "").trim()
+            val amount = amountStr.toDoubleOrNull() ?: 0.0
+            return ParsedNotification("Yape", sender, amount)
+        }
+
+        // 2. Plin notifications
+        // Example: "Plin: Juan Perez te envió S/ 15.00" or "¡Recibiste un Plin! Juan Perez te envió S/ 15.00"
+        val plinRegex = Regex("""(?:plin:?|recibiste un plin!?)\s*(.+?)\s+te (?:envió|transfirió)\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
+        val plinMatch = plinRegex.find(text)
+        if (plinMatch != null) {
+            val sender = plinMatch.groupValues[1].trim()
+            val amountStr = plinMatch.groupValues[2].replace(",", "").trim()
+            val amount = amountStr.toDoubleOrNull() ?: 0.0
+            return ParsedNotification("Plin", sender, amount)
+        }
+
+        // 3. Generic backup pattern for banks sending SMS/Notifications
+        // Example: "Juan Perez te envió S/ 15.00"
+        val genericRegex = Regex("""(.+?)\s+te (?:envió|transfirió|yapeó)\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
+        val genericMatch = genericRegex.find(text)
+        if (genericMatch != null) {
+            val sender = genericMatch.groupValues[1].trim()
+            val amountStr = genericMatch.groupValues[2].replace(",", "").trim()
+            val amount = amountStr.toDoubleOrNull() ?: 0.0
+            val app = if (packageName.contains("yape", ignoreCase = true)) "Yape" else "Plin"
+            return ParsedNotification(app, sender, amount)
+        }
+
+        // 4. Test Notification Pattern
+        // Example: "Test: Juan Perez te yapeó S/ 15.00" (useful for manual debugging)
+        if (packageName == "com.checkealo.app" || text.startsWith("Test:", ignoreCase = true)) {
+            val testRegex = Regex("""(?:Test:\s+)?(.+?)\s+te yapeó\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
+            val testMatch = testRegex.find(text)
+            if (testMatch != null) {
+                val sender = testMatch.groupValues[1].trim()
+                val amountStr = testMatch.groupValues[2].replace(",", "").trim()
+                val amount = amountStr.toDoubleOrNull() ?: 0.0
+                return ParsedNotification("Test App", sender, amount)
+            }
+        }
+
+        return null
+    }
+
+    private suspend fun processTransaction(packageName: String, parsed: ParsedNotification, rawText: String) {
+        val database = NotificationDatabase.getDatabase(applicationContext)
+        val dao = database.notificationDao()
+
+        // 1. Save initial log to database
+        var log = NotificationLog(
+            appName = parsed.appName,
+            packageName = packageName,
+            sender = parsed.sender,
+            amount = parsed.amount,
+            rawText = rawText,
+            mqttSent = false,
+            whatsappSent = false
+        )
+        val logId = dao.insertLog(log)
+        log = log.copy(id = logId)
+
+        // 2. Build structured JSON payload
+        val payloadMap = mapOf(
+            "id" to log.id,
+            "appName" to log.appName,
+            "sender" to log.sender,
+            "amount" to log.amount,
+            "timestamp" to log.timestamp,
+            "rawText" to log.rawText
+        )
+        val payloadJson = gson.toJson(payloadMap)
+
+        // 3. Publish to MQTT Broker
+        val mqttHelper = MqttClientHelper(applicationContext)
+        val mqttResult = mqttHelper.publishNotification(payloadJson)
+        var mqttSent = false
+        var mqttError: String? = null
+        if (mqttResult.isSuccess) {
+            mqttSent = true
+        } else {
+            mqttError = mqttResult.exceptionOrNull()?.message ?: "Unknown MQTT error"
+        }
+
+        // 4. Send to WhatsApp Webhook
+        // We construct a user-friendly message
+        val messageText = "🔔 *Checkealo Pago Recibido*\n" +
+                "📱 *App:* ${parsed.appName}\n" +
+                "👤 *Emisor:* ${parsed.sender}\n" +
+                "💰 *Monto:* S/ ${String.format("%.2f", parsed.amount)}\n" +
+                "🕒 *Fecha:* ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(log.timestamp)}"
+
+        val whatsappHelper = WhatsAppClientHelper(applicationContext)
+        val whatsappResult = whatsappHelper.sendMessage(messageText)
+        var whatsappSent = false
+        var whatsappError: String? = null
+        if (whatsappResult.isSuccess) {
+            whatsappSent = true
+        } else {
+            whatsappError = whatsappResult.exceptionOrNull()?.message ?: "Unknown WhatsApp error"
+        }
+
+        // 5. Update log in Database with success/error status
+        val updatedLog = log.copy(
+            mqttSent = mqttSent,
+            mqttError = mqttError,
+            whatsappSent = whatsappSent,
+            whatsappError = whatsappError
+        )
+        dao.updateLog(updatedLog)
+        Log.d(TAG, "Transaction processed and database updated. MQTT=$mqttSent, WhatsApp=$whatsappSent")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "Notification Listener destroyed!")
+    }
+}

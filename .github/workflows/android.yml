@@ -1,0 +1,43 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Permite compilar manualmente desde la pestaña de Actions en GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout del código
+      uses: actions/checkout@v4
+
+    - name: Configurar JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Configurar Gradle
+      uses: gradle/actions/setup-gradle@v3
+
+    # Si no tienes los archivos locales de Gradle Wrapper (gradlew) en el repositorio,
+    # el servidor de GitHub los creará automáticamente aquí.
+    - name: Generar Gradle Wrapper
+      run: gradle wrapper --gradle-version 8.2.2
+
+    - name: Dar permisos de ejecución a Gradlew
+      run: chmod +x gradlew
+
+    - name: Compilar APK de Depuración (Debug)
+      run: ./gradlew assembleDebug
+
+    - name: Subir Archivo APK como Artefacto
+      uses: actions/upload-artifact@v4
+      with:
+        name: checkealo-app-debug
+        path: app/build/outputs/apk/debug/app-debug.apk

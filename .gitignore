@@ -1,0 +1,27 @@
+# Archivos y carpetas de Gradle
+.gradle/
+build/
+app/build/
+
+# Archivos de configuración local (ruta del Android SDK)
+local.properties
+
+# Archivos de Android Studio y otros IDEs
+.idea/
+*.iml
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Resultados de compilación y APKs
+*.apk
+*.aar
+*.ap_
+*.keystore
+!proguard-rules.pro
+
+# Archivos temporales y de sistema operativo
+*.log
+.DS_Store
+Thumbs.db

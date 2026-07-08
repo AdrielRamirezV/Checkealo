@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Checkealo</string>
+    <string name="notification_service_name">Checkealo Notification Listener</string>
+</resources>
