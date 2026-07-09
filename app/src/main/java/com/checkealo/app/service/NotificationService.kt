@@ -42,39 +42,69 @@ class NotificationService : NotificationListenerService() {
         Log.d(TAG, "Notification received from package: $packageName | Title: $title | Text: $text")
 
         // Parse notification
-        val parsed = parseNotification(packageName, title, text) ?: return
-        Log.d(TAG, "Parsed notification successfully: App=${parsed.appName}, Sender=${parsed.sender}, Amount=${parsed.amount}")
-
-        // Process in background coroutine
-        serviceScope.launch {
-            processTransaction(packageName, parsed, text ?: "")
+        val parsed = parseNotification(packageName, title, text)
+        if (parsed != null) {
+            Log.d(TAG, "Parsed notification successfully: App=${parsed.appName}, Sender=${parsed.sender}, Amount=${parsed.amount}")
+            serviceScope.launch {
+                processTransaction(packageName, parsed, text ?: "")
+            }
+        } else {
+            // FALLBACK DEBUG LOG: Save unparsed notifications from Yape/Plin packages to the database
+            val isYape = packageName.contains("yape", ignoreCase = true)
+            val isPlinBank = packageName.contains("bbva", ignoreCase = true) || 
+                              packageName.contains("interbank", ignoreCase = true) || 
+                              packageName.contains("scotiabank", ignoreCase = true)
+            
+            if (isYape || isPlinBank) {
+                val appNameLabel = if (isYape) "Yape (No Parseado)" else "Plin (No Parseado)"
+                serviceScope.launch {
+                    val database = NotificationDatabase.getDatabase(applicationContext)
+                    val dao = database.notificationDao()
+                    val debugLog = NotificationLog(
+                        appName = appNameLabel,
+                        packageName = packageName,
+                        sender = "Desconocido",
+                        amount = 0.0,
+                        rawText = "Título: $title | Texto: $text",
+                        mqttSent = false,
+                        whatsappSent = false
+                    )
+                    dao.insertLog(debugLog)
+                }
+            }
         }
     }
 
     private fun parseNotification(packageName: String, title: String?, text: String?): ParsedNotification? {
         if (text == null) return null
 
-        // 1a. Yape confirmation payment notifications
-        // Example: "Confirmacion de Pago Juan Perez te envio un pago por S/ 20.00 el cod de seguridad es 123456"
-        val yapeConfirmRegex = Regex("""Confirmaci[oó]n de Pago\s+(.+?)\s+te envi[oó]\s+un pago por\s+S/(\s*[\d,]+\.\d{2})(?:\s+el cod\.? de seguridad es\s*(\w+))?""", RegexOption.IGNORE_CASE)
-        val yapeConfirmMatch = yapeConfirmRegex.find(text)
-        if (yapeConfirmMatch != null) {
-            val sender = yapeConfirmMatch.groupValues[1].trim()
-            val amountStr = yapeConfirmMatch.groupValues[2].replace(",", "").trim()
-            val amount = amountStr.toDoubleOrNull() ?: 0.0
-            val code = if (yapeConfirmMatch.groupValues.size > 3) yapeConfirmMatch.groupValues[3].trim() else null
-            return ParsedNotification("Yape", sender, amount, code)
-        }
+        val isYapePackage = packageName.contains("yape", ignoreCase = true) || packageName == "com.checkealo.app"
 
-        // 1b. Yape standard notifications
-        // Example: "Juan Perez te yapeó S/ 15.00" or "¡Yape! Juan Perez te yapeó S/ 15.00"
-        val yapeRegex = Regex("""(?:¡Yape!\s+)?(.+?)\s+te yapeó\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
-        val yapeMatch = yapeRegex.find(text)
-        if (yapeMatch != null) {
-            val sender = yapeMatch.groupValues[1].trim()
-            val amountStr = yapeMatch.groupValues[2].replace(",", "").trim()
-            val amount = amountStr.toDoubleOrNull() ?: 0.0
-            return ParsedNotification("Yape", sender, amount)
+        // 1a. Yape confirmation payment notifications (Text body check)
+        // Text: "Juan Perez te envio un pago por S/ 20.00 el cod de seguridad es 123456"
+        // Also supports when Title is "Confirmación de Pago" and Text doesn't repeat the title
+        if (isYapePackage) {
+            // Regex matches the body text, allowing optional "Confirmacion de Pago" prefix
+            val yapeConfirmBodyRegex = Regex("""(?:Confirmaci[oó]n de Pago\s+)?(.+?)\s+te envi[oó]\s+un pago por\s+S/(\s*[\d,]+\.\d{2})(?:\s+el cod\.? de seguridad es\s*(\w+))?""", RegexOption.IGNORE_CASE)
+            val yapeConfirmMatch = yapeConfirmBodyRegex.find(text)
+            if (yapeConfirmMatch != null) {
+                val sender = yapeConfirmMatch.groupValues[1].trim()
+                val amountStr = yapeConfirmMatch.groupValues[2].replace(",", "").trim()
+                val amount = amountStr.toDoubleOrNull() ?: 0.0
+                val code = if (yapeConfirmMatch.groupValues.size > 3 && yapeConfirmMatch.groupValues[3].isNotEmpty()) yapeConfirmMatch.groupValues[3].trim() else null
+                return ParsedNotification("Yape", sender, amount, code)
+            }
+
+            // 1b. Yape standard notifications
+            // Example: "Juan Perez te yapeó S/ 15.00"
+            val yapeRegex = Regex("""(?:¡Yape!\s+)?(.+?)\s+te yapeó\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
+            val yapeMatch = yapeRegex.find(text)
+            if (yapeMatch != null) {
+                val sender = yapeMatch.groupValues[1].trim()
+                val amountStr = yapeMatch.groupValues[2].replace(",", "").trim()
+                val amount = amountStr.toDoubleOrNull() ?: 0.0
+                return ParsedNotification("Yape", sender, amount)
+            }
         }
 
         // 2. Plin notifications
@@ -98,28 +128,6 @@ class NotificationService : NotificationListenerService() {
             val amount = amountStr.toDoubleOrNull() ?: 0.0
             val app = if (packageName.contains("yape", ignoreCase = true)) "Yape" else "Plin"
             return ParsedNotification(app, sender, amount)
-        }
-
-        // 4. Test Notification Pattern
-        // Example: "Test: Juan Perez te yapeó S/ 15.00" (useful for manual debugging)
-        if (packageName == "com.checkealo.app" || text.startsWith("Test:", ignoreCase = true)) {
-            val testConfirmMatch = yapeConfirmRegex.find(text)
-            if (testConfirmMatch != null) {
-                val sender = testConfirmMatch.groupValues[1].trim()
-                val amountStr = testConfirmMatch.groupValues[2].replace(",", "").trim()
-                val amount = amountStr.toDoubleOrNull() ?: 0.0
-                val code = if (testConfirmMatch.groupValues.size > 3) testConfirmMatch.groupValues[3].trim() else null
-                return ParsedNotification("Test App", sender, amount, code)
-            }
-
-            val testRegex = Regex("""(?:Test:\s+)?(.+?)\s+te yapeó\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
-            val testMatch = testRegex.find(text)
-            if (testMatch != null) {
-                val sender = testMatch.groupValues[1].trim()
-                val amountStr = testMatch.groupValues[2].replace(",", "").trim()
-                val amount = amountStr.toDoubleOrNull() ?: 0.0
-                return ParsedNotification("Test App", sender, amount)
-            }
         }
 
         return null
