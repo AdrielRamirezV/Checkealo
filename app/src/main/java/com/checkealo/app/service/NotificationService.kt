@@ -84,8 +84,8 @@ class NotificationService : NotificationListenerService() {
         // Text: "Juan Perez te envio un pago por S/ 20.00 el cod de seguridad es 123456"
         // Also supports when Title is "Confirmación de Pago" and Text doesn't repeat the title
         if (isYapePackage) {
-            // Regex matches the body text, allowing optional "Confirmacion de Pago" prefix
-            val yapeConfirmBodyRegex = Regex("""(?:Confirmaci[oó]n de Pago\s+)?(.+?)\s+te envi[oó]\s+un pago por\s+S/(\s*[\d,]+\.\d{2})(?:\s+el cod\.? de seguridad es\s*(\w+))?""", RegexOption.IGNORE_CASE)
+            // Regex matches the body text, allowing optional "Confirmacion de Pago" prefix, flexible decimals (0.1, 1, 1.00), period after amount, and variations in "El cód. de seguridad es: XXX"
+            val yapeConfirmBodyRegex = Regex("""(?:Confirmaci[oó]n de Pago\s+)?(.+?)\s+te envi[oó]\s+un pago por\s+S/\s*([\d,]+(?:\.\d+)?)\.?(?:\s+[eé]l c[oó]d\.?\s+de seguridad\s+es:?\s*(\w+))?""", RegexOption.IGNORE_CASE)
             val yapeConfirmMatch = yapeConfirmBodyRegex.find(text)
             if (yapeConfirmMatch != null) {
                 val sender = yapeConfirmMatch.groupValues[1].trim()
