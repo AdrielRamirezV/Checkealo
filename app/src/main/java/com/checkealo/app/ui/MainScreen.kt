@@ -280,12 +280,20 @@ fun NotificationLogCard(log: NotificationLog) {
                     fontSize = 18.sp
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = log.sender,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
+            if (log.transactionCode != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Código: ${log.transactionCode}",
+                    color = Color(0xFF00B4DB),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = log.rawText,

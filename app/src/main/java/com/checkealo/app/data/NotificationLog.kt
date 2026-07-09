@@ -15,5 +15,6 @@ data class NotificationLog(
     val mqttSent: Boolean = false,
     val whatsappSent: Boolean = false,
     val mqttError: String? = null,
-    val whatsappError: String? = null
+    val whatsappError: String? = null,
+    val transactionCode: String? = null
 )

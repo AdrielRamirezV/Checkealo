@@ -175,9 +175,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             notificationManager.createNotificationChannel(channel)
         }
 
-        val text = "Test: $sender te yapeó S/ ${String.format("%.2f", amount)}"
+        val randomCode = 100000 + (Math.random() * 900000).toInt()
+        val text = "Confirmacion de Pago $sender te envio un pago por S/ ${String.format("%.2f", amount)} el cod de seguridad es $randomCode"
         val notification = NotificationCompat.Builder(context, channelId)
-            .setContentTitle("¡Yape! de Prueba")
+            .setContentTitle("Confirmación de Pago")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

@@ -30,7 +30,7 @@ interface NotificationDao {
     suspend fun clearAllLogs()
 }
 
-@Database(entities = [NotificationLog::class], version = 1, exportSchema = false)
+@Database(entities = [NotificationLog::class], version = 2, exportSchema = false)
 abstract class NotificationDatabase : RoomDatabase() {
     abstract fun notificationDao(): NotificationDao
 
@@ -44,7 +44,8 @@ abstract class NotificationDatabase : RoomDatabase() {
                     context.applicationContext,
                     NotificationDatabase::class.java,
                     "checkealo_database"
-                ).build()
+                ).fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

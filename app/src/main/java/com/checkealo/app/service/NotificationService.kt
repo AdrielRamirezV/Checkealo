@@ -21,7 +21,8 @@ class NotificationService : NotificationListenerService() {
     data class ParsedNotification(
         val appName: String,
         val sender: String,
-        val amount: Double
+        val amount: Double,
+        val transactionCode: String? = null
     )
 
     override fun onListenerConnected() {
@@ -53,7 +54,19 @@ class NotificationService : NotificationListenerService() {
     private fun parseNotification(packageName: String, title: String?, text: String?): ParsedNotification? {
         if (text == null) return null
 
-        // 1. Yape standard notifications
+        // 1a. Yape confirmation payment notifications
+        // Example: "Confirmacion de Pago Juan Perez te envio un pago por S/ 20.00 el cod de seguridad es 123456"
+        val yapeConfirmRegex = Regex("""Confirmaci[oó]n de Pago\s+(.+?)\s+te envi[oó]\s+un pago por\s+S/(\s*[\d,]+\.\d{2})(?:\s+el cod\.? de seguridad es\s*(\w+))?""", RegexOption.IGNORE_CASE)
+        val yapeConfirmMatch = yapeConfirmRegex.find(text)
+        if (yapeConfirmMatch != null) {
+            val sender = yapeConfirmMatch.groupValues[1].trim()
+            val amountStr = yapeConfirmMatch.groupValues[2].replace(",", "").trim()
+            val amount = amountStr.toDoubleOrNull() ?: 0.0
+            val code = if (yapeConfirmMatch.groupValues.size > 3) yapeConfirmMatch.groupValues[3].trim() else null
+            return ParsedNotification("Yape", sender, amount, code)
+        }
+
+        // 1b. Yape standard notifications
         // Example: "Juan Perez te yapeó S/ 15.00" or "¡Yape! Juan Perez te yapeó S/ 15.00"
         val yapeRegex = Regex("""(?:¡Yape!\s+)?(.+?)\s+te yapeó\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
         val yapeMatch = yapeRegex.find(text)
@@ -90,6 +103,15 @@ class NotificationService : NotificationListenerService() {
         // 4. Test Notification Pattern
         // Example: "Test: Juan Perez te yapeó S/ 15.00" (useful for manual debugging)
         if (packageName == "com.checkealo.app" || text.startsWith("Test:", ignoreCase = true)) {
+            val testConfirmMatch = yapeConfirmRegex.find(text)
+            if (testConfirmMatch != null) {
+                val sender = testConfirmMatch.groupValues[1].trim()
+                val amountStr = testConfirmMatch.groupValues[2].replace(",", "").trim()
+                val amount = amountStr.toDoubleOrNull() ?: 0.0
+                val code = if (testConfirmMatch.groupValues.size > 3) testConfirmMatch.groupValues[3].trim() else null
+                return ParsedNotification("Test App", sender, amount, code)
+            }
+
             val testRegex = Regex("""(?:Test:\s+)?(.+?)\s+te yapeó\s+S/(\s*[\d,]+\.\d{2})""", RegexOption.IGNORE_CASE)
             val testMatch = testRegex.find(text)
             if (testMatch != null) {
@@ -115,13 +137,14 @@ class NotificationService : NotificationListenerService() {
             amount = parsed.amount,
             rawText = rawText,
             mqttSent = false,
-            whatsappSent = false
+            whatsappSent = false,
+            transactionCode = parsed.transactionCode
         )
         val logId = dao.insertLog(log)
         log = log.copy(id = logId)
 
         // 2. Build structured JSON payload
-        val payloadMap = mapOf(
+        val payloadMap = mutableMapOf<String, Any>(
             "id" to log.id,
             "appName" to log.appName,
             "sender" to log.sender,
@@ -129,6 +152,7 @@ class NotificationService : NotificationListenerService() {
             "timestamp" to log.timestamp,
             "rawText" to log.rawText
         )
+        log.transactionCode?.let { payloadMap["transactionCode"] = it }
         val payloadJson = gson.toJson(payloadMap)
 
         // 3. Publish to MQTT Broker
@@ -144,11 +168,14 @@ class NotificationService : NotificationListenerService() {
 
         // 4. Send to WhatsApp Webhook
         // We construct a user-friendly message
-        val messageText = "🔔 *Checkealo Pago Recibido*\n" +
+        var messageText = "🔔 *Checkealo Pago Recibido*\n" +
                 "📱 *App:* ${parsed.appName}\n" +
                 "👤 *Emisor:* ${parsed.sender}\n" +
-                "💰 *Monto:* S/ ${String.format("%.2f", parsed.amount)}\n" +
-                "🕒 *Fecha:* ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(log.timestamp)}"
+                "💰 *Monto:* S/ ${String.format("%.2f", parsed.amount)}\n"
+        parsed.transactionCode?.let {
+            messageText += "🔑 *Código:* $it\n"
+        }
+        messageText += "🕒 *Fecha:* ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(log.timestamp)}"
 
         val whatsappHelper = WhatsAppClientHelper(applicationContext)
         val whatsappResult = whatsappHelper.sendMessage(messageText)
