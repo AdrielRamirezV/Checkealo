@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -47,6 +48,17 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         checkPermission()
         viewModel.clearTestStatus() // Reset any old MQTT/WA test outputs when coming back to screen
+        
+        // Force the system to rebind the notification listener service if it was suspended/killed in the background
+        if (hasNotificationPermission) {
+            try {
+                NotificationListenerService.requestRebind(
+                    ComponentName(this, com.checkealo.app.service.NotificationService::class.java)
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun checkPermission() {

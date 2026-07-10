@@ -1,5 +1,10 @@
 package com.checkealo.app.service
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -28,6 +33,35 @@ class NotificationService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.d(TAG, "Notification Listener connected!")
+        startForegroundService()
+    }
+
+    private fun startForegroundService() {
+        val channelId = "checkealo_foreground_channel"
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Servicio Activo Checkealo",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            channel.description = "Mantiene el lector de pagos activo las 24 horas"
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = androidx.core.app.NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Checkealo Activo")
+            .setContentText("Monitoreando pagos de Yape y Plin en segundo plano")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(1001, notification)
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
